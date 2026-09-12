@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Переговорный чемоданчик</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1B2B34">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Чемоданчик">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg: #1B2B34;
+    --bg-deep: #12202A;
+    --paper: #FBF7EE;
+    --ink: #142027;
+    --ink-soft: #4B5A62;
+    --accent: #FFB627;
+    --accent-ink: #4A2E00;
+    --pink: #F72585;
+    --mint: #4ECDC4;
+    --danger: #E63946;
+    --radius: 10px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 15% 8%, rgba(255,182,39,0.08), transparent 40%),
+      radial-gradient(circle at 85% 92%, rgba(78,205,196,0.08), transparent 40%);
+    color: var(--paper);
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+  }
+  #app{
+    width:100%;
+    max-width:480px;
+    min-height:100vh;
+    background: var(--bg);
+    display:flex;
+    flex-direction:column;
+    position:relative;
+    overflow-x:hidden;
+  }
+
+  header{
+    padding:22px 18px 14px;
+    position:sticky;
+    top:0;
+    z-index:20;
+    background: var(--bg);
+    border-bottom:3px solid var(--ink);
+  }
+  .menu-btn{
+    position:absolute;
+    top:20px; right:16px;
+    background:none; border:none;
+    color:var(--paper); font-size:22px;
+    cursor:pointer; padding:4px 8px;
+    line-height:1;
+  }
+  .brand{ display:flex; align-items:baseline; gap:8px; margin-bottom:14px; }
+  .brand h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:700; font-size:22px; line-height:1.05; margin:0;
+    color:var(--paper); letter-spacing:-0.02em;
+  }
+  .brand span{ font-size:12px; color: var(--mint); font-weight:600; }
+  .search-row{ position:relative; margin-bottom:12px; }
+  .search-row input{
+    width:100%; padding:11px 14px; font-size:15px; font-family:'Inter',sans-serif;
+    border:2.5px solid var(--ink); border-radius:var(--radius);
+    background:var(--paper); color:var(--ink); outline:none;
+  }
+  .search-row input::placeholder{color:#8a8577;}
+  .tabs{ display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none; }
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{
+    flex:0 0 auto; padding:7px 13px; font-size:13px; font-weight:600; font-family:'Inter',sans-serif;
+    border:2px solid var(--paper); border-radius:20px; color:var(--paper); background:transparent;
+    white-space:nowrap; cursor:pointer;
+  }
+  .tab.active{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+
+  main{ flex:1; padding:18px 16px 100px; }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px 14px; }
+  .card{
+    background:var(--paper); border:3px solid var(--ink); border-radius:var(--radius);
+    box-shadow:5px 5px 0 var(--ink); overflow:hidden; cursor:pointer;
+    transform:rotate(-1.2deg); transition:transform .15s ease;
+  }
+  .card:nth-child(3n+1){transform:rotate(1.4deg);}
+  .card:nth-child(3n+2){transform:rotate(-1.6deg);}
+  .card:nth-child(3n){transform:rotate(0.8deg);}
+  .card:active{transform:scale(0.96) rotate(0deg);}
+  .card-media{
+    position:relative; width:100%; aspect-ratio:1/1; background:#EFE9DA;
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+    border-bottom:3px solid var(--ink);
+  }
+  .card-media img, .card-media video{ width:100%; height:100%; object-fit:cover; }
+  .audio-tile{ font-size:38px; }
+  .play-badge{
+    position:absolute; bottom:6px; right:6px; width:26px; height:26px;
+    background:var(--ink); color:var(--paper); border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:11px;
+  }
+  .fav-badge{ position:absolute; top:6px; left:6px; font-size:15px; }
+  .card-body{ padding:9px 10px 11px; }
+  .card-title{
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13px; color:var(--ink);
+    line-height:1.2; margin:0 0 5px; display:-webkit-box; -webkit-line-clamp:2;
+    -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .card-tags{ display:flex; flex-wrap:wrap; gap:4px; }
+  .chip{ font-size:9.5px; font-weight:600; padding:2px 6px; border-radius:8px; background:var(--mint); color:var(--ink); }
+
+  .empty-state{ grid-column:1/-1; text-align:center; padding:60px 20px; color:#9FB0B8; }
+  .empty-state .big{ font-size:44px; margin-bottom:10px; }
+  .empty-state h3{ font-family:'Space Grotesk',sans-serif; color:var(--paper); font-size:17px; margin:0 0 6px; }
+  .empty-state p{ font-size:13px; line-height:1.5; margin:0; }
+
+  .fab{
+    position:fixed; bottom:26px; right:20px; width:58px; height:58px; border-radius:50%;
+    background:var(--pink); border:3px solid var(--ink); box-shadow:4px 4px 0 var(--ink);
+    color:white; font-size:26px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; z-index:30;
+  }
+  .fab:active{ transform:scale(0.92); }
+
+  .overlay{
+    position:fixed; inset:0; background:rgba(10,16,20,0.72); display:flex;
+    align-items:flex-end; justify-content:center; z-index:100; opacity:0; pointer-events:none;
+    transition:opacity .2s ease;
+  }
+  .overlay.open{opacity:1; pointer-events:auto;}
+  .sheet{
+    width:100%; max-width:480px; max-height:92vh; background:var(--bg-deep);
+    border-top:3px solid var(--ink); border-radius:20px 20px 0 0; padding:16px 18px 24px;
+    overflow-y:auto; transform:translateY(30px); transition:transform .22s ease; position:relative;
+  }
+  .overlay.open .sheet{transform:translateY(0);}
+  .sheet-handle{ width:38px; height:4px; background:#3A4A52; border-radius:3px; margin:0 auto 14px; }
+  .sheet-close{ position:absolute; top:14px; right:16px; background:none; border:none; color:var(--paper); font-size:20px; cursor:pointer; }
+
+  .viewer-title{ font-family:'Space Grotesk',sans-serif; font-size:18px; font-weight:700; margin:0 0 10px; padding-right:30px; }
+  .viewer-media{
+    width:100%; border-radius:var(--radius); overflow:hidden; background:#000;
+    margin-bottom:14px; display:flex; align-items:center; justify-content:center;
+  }
+  .viewer-media img{width:100%;display:block;}
+  .viewer-media video{width:100%;display:block;max-height:60vh;}
+  .viewer-media.audio-mode{ background:var(--paper); padding:30px 16px; flex-direction:column; gap:14px; }
+  .viewer-media.audio-mode .emoji{font-size:52px;}
+  .viewer-media audio{width:100%;}
+  .viewer-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+  .action-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+  .btn{
+    font-family:'Inter',sans-serif; font-weight:700; font-size:14px; padding:12px 10px;
+    border-radius:var(--radius); border:2.5px solid var(--ink); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:7px;
+  }
+  .btn-primary{background:var(--pink); color:white;}
+  .btn-secondary{background:var(--paper); color:var(--ink);}
+  .btn-ghost{background:transparent; color:#9FB0B8; border-color:#3A4A52;}
+  .btn-danger{background:transparent; color:var(--danger); border-color:var(--danger);}
+  .btn:active{transform:scale(0.97);}
+  .full-row{grid-column:1/-1;}
+
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block; font-size:12px; font-weight:700; color:var(--mint); margin-bottom:6px;
+    text-transform:uppercase; letter-spacing:0.03em;
+  }
+  .field input[type=text]{
+    width:100%; padding:11px 12px; border:2.5px solid var(--paper); border-radius:var(--radius);
+    background:transparent; color:var(--paper); font-size:14px; font-family:'Inter',sans-serif;
+  }
+  .file-drop{
+    border:2.5px dashed #3A4A52; border-radius:var(--radius); padding:22px 14px; text-align:center;
+    color:#9FB0B8; font-size:13px; cursor:pointer; position:relative;
+  }
+  .file-drop input{ position:absolute; inset:0; opacity:0; cursor:pointer; }
+  .file-drop.has-file{border-style:solid; border-color:var(--mint); color:var(--paper);}
+  .tag-picker{display:flex;flex-wrap:wrap;gap:7px;}
+  .tag-opt{
+    padding:7px 12px; border-radius:20px; border:2px solid var(--paper); font-size:12.5px;
+    font-weight:600; cursor:pointer; color:var(--paper);
+  }
+  .tag-opt.selected{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .hint{font-size:11.5px; color:#8FA0A8; margin-top:6px; line-height:1.4;}
+  .warn{color:var(--accent); font-size:12px; margin-top:6px;}
+
+  .toast{
+    position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:var(--ink);
+    color:var(--paper); padding:10px 18px; border-radius:20px; font-size:13px; font-weight:600;
+    z-index:200; opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease;
+    max-width:85%; text-align:center;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button class="menu-btn" id="menuBtn">⋮</button>
+    <div class="brand">
+      <h1>Переговорный<br>чемоданчик</h1>
+      <span>на случай важных встреч</span>
+    </div>
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="Найти реакцию, аргумент, спасение...">
+    </div>
+    <div class="tabs" id="tabs"></div>
+  </header>
+
+  <main>
+    <div class="grid" id="grid"></div>
+  </main>
+
+  <div class="fab" id="fabAdd">+</div>
+</div>
+
+<div class="overlay" id="viewerOverlay">
+  <div class="sheet">
+    <button class="sheet-close" id="viewerClose">✕</button>
+    <div class="sheet-handle"></div>
+    <h2 class="viewer-title" id="viewerTitle"></h2>
+    <div class="viewer-media" id="viewerMedia"></div>
+    <div class="viewer-tags" id="viewerTags"></div>
+    <div class="action-row">
+      <button class="btn btn-primary" id="viewerShare">📤 Отправить</button>
+      <button class="btn btn-secondary" id="viewerFav">☆ В избранное</button>
+    </div>
+    <div class="action-row">
+      <button class="btn btn-ghost" id="viewerDownload">⬇ Скачать файл</button>
+      <button class="btn btn-danger" id="viewerDelete">🗑 Удалить</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="addOverlay">
+  <div class="sheet">
+    <button class="sheet-close" id="addClose">✕</button>
+    <div class="sheet-handle"></div>
+    <h2 class="viewer-title">Добавить в чемоданчик</h2>
+
+    <div class="tabs" style="margin-bottom:14px;">
+      <button class="tab active" id="addModeFile" data-mode="file">📁 Файл</button>
+      <button class="tab" id="addModeLink" data-mode="link">🔗 Ссылка</button>
+    </div>
+
+    <div id="fileFieldWrap">
+      <div class="field">
+        <label>Файл (фото, видео или аудио)</label>
+        <div class="file-drop" id="fileDrop">
+          <span id="fileDropText">Нажмите, чтобы выбрать файл</span>
+          <input type="file" id="fileInput" accept="image/*,video/*,audio/*">
+        </div>
+        <div class="hint">Хранится прямо в браузере на этом телефоне. Большие видео могут грузиться дольше.</div>
+        <div class="warn" id="sizeWarn" style="display:none;"></div>
+      </div>
+    </div>
+
+    <div id="linkFieldWrap" style="display:none;">
+      <div class="field">
+        <label>Ссылка на картинку, видео или звук</label>
+        <input type="text" id="linkInput" placeholder="https://...">
+        <div class="hint">Файл не скачивается на телефон — приложение просто запоминает ссылку. Сработает, только если ссылка открытая и останется рабочей в будущем.</div>
+      </div>
+      <div class="field">
+        <label>Тип контента по ссылке</label>
+        <div class="tag-picker" id="linkTypePicker">
+          <div class="tag-opt" data-type="image">🖼 Картинка</div>
+          <div class="tag-opt" data-type="video">🎬 Видео</div>
+          <div class="tag-opt" data-type="audio">🎧 Аудио</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Название / подпись</label>
+      <input type="text" id="titleInput" placeholder="Например: «Мне нужно посоветоваться»">
+    </div>
+
+    <div class="field">
+      <label>Для какого момента переговоров</label>
+      <div class="tag-picker" id="tagPicker"></div>
+    </div>
+
+    <button class="btn btn-primary full-row" id="saveBtn" style="width:100%;">Добавить в коллекцию</button>
+  </div>
+</div>
+
+<div class="overlay" id="settingsOverlay">
+  <div class="sheet">
+    <button class="sheet-close" id="settingsClose">✕</button>
+    <div class="sheet-handle"></div>
+    <h2 class="viewer-title">Перенос на другой телефон</h2>
+    <p style="font-size:13px; color:#9FB0B8; line-height:1.5; margin:0 0 12px;">
+      Коллекция хранится прямо в этом браузере на этом телефоне и никуда сама не летит.
+      Чтобы перенести её — выгрузите архив ниже и перешлите его себе (в мессенджер, почту
+      или облако), затем откройте эту же страницу на другом телефоне и нажмите «Импортировать».
+    </p>
+    <p id="sizeEstimate" style="font-size:12.5px; color:var(--mint); font-weight:600; margin:0 0 14px;"></p>
+
+    <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--paper); margin-bottom:14px; cursor:pointer;">
+      <input type="checkbox" id="favOnlyCheck" style="width:16px;height:16px;">
+      Экспортировать только избранное (меньше файл)
+    </label>
+
+    <button class="btn btn-secondary full-row" id="exportBtn" style="width:100%; margin-bottom:12px;">⬆️ Экспортировать в архив</button>
+
+    <div class="file-drop" id="importDrop" style="margin-bottom:6px;">
+      <span>⬇️ Импортировать файл коллекции</span>
+      <input type="file" id="importInput" accept="application/zip,.zip,application/json,.json">
+    </div>
+    <div class="hint" style="margin-bottom:16px;">Принимает и .zip (новый формат), и старые .json-экспорты. Импорт добавляет мемы к тому, что уже есть — ничего не удаляет.</div>
+
+    <div class="field">
+      <label>Или импортировать по прямой ссылке</label>
+      <input type="text" id="importUrlInput" placeholder="https://... (ссылка на .zip или .json)">
+      <div class="hint">Пригодится, если файл экспорта лежит в облаке (GitHub, Cloudinary и т.п.) — не нужно скачивать вручную. Ссылка должна отдавать файл напрямую, а не страницу с превью, и разрешать CORS.</div>
+    </div>
+    <button class="btn btn-secondary full-row" id="importUrlBtn" style="width:100%;">Импортировать по ссылке</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const TAGS = ["Согласие","Возражение","Тяну время","Давление","Капитуляция","Победа","Разрядка обстановки","Финальный аргумент"];
+const DB_NAME = 'chemodanchik-db';
+const STORE = 'items';
+
+let items = [];
+let activeFilter = "Все";
+let searchQuery = "";
+let pendingFile = null; // File object
+let addMode = 'file'; // 'file' | 'link'
+let selectedLinkType = null;
+let selectedTags = [];
+let currentViewerId = null;
+
+const $ = (sel) => document.querySelector(sel);
+const grid = $('#grid');
+const tabsEl = $('#tabs');
+
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=> t.classList.remove('show'), 2600);
+}
+
+/* ---------------- IndexedDB layer ---------------- */
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    if(!('indexedDB' in window)){
+      reject(new Error('IndexedDB не поддерживается этим браузером'));
+      return;
+    }
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = (e)=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(STORE)){
+        db.createObjectStore(STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+async function idbGetAll(){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).getAll();
+    req.onsuccess = ()=> resolve(req.result || []);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+async function idbPut(item){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(item);
+    tx.oncomplete = ()=> resolve(true);
+    tx.onerror = ()=> reject(tx.error);
+  });
+}
+async function idbDelete(id){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete = ()=> resolve(true);
+    tx.onerror = ()=> reject(tx.error);
+  });
+}
+
+function typeOf(mime){
+  if(!mime) return 'other';
+  if(mime.startsWith('image/')) return 'image';
+  if(mime.startsWith('video/')) return 'video';
+  if(mime.startsWith('audio/')) return 'audio';
+  return 'other';
+}
+
+function svgBlobSync(emoji, caption, bg){
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500">
+    <rect width="500" height="500" fill="${bg}"/>
+    <text x="250" y="230" font-size="150" text-anchor="middle" dominant-baseline="middle">${emoji}</text>
+    <text x="250" y="390" font-family="Arial, sans-serif" font-weight="900" font-size="34" fill="#142027" text-anchor="middle">${caption}</text>
+  </svg>`;
+  return new Blob([svg], {type:'image/svg+xml'});
+}
+
+function mediaSrc(item){
+  if(item.source === 'link') return item.url;
+  if(!item._url){
+    item._url = URL.createObjectURL(item.blob);
+  }
+  return item._url;
+}
+
+function guessTypeFromUrl(url){
+  const clean = url.split('?')[0].split('#')[0];
+  const ext = clean.split('.').pop().toLowerCase();
+  const imageExt = ['jpg','jpeg','png','gif','webp','avif','bmp','svg'];
+  const videoExt = ['mp4','webm','mov','mkv','m4v'];
+  const audioExt = ['mp3','wav','ogg','m4a','aac','flac'];
+  if(imageExt.includes(ext)) return 'image';
+  if(videoExt.includes(ext)) return 'video';
+  if(audioExt.includes(ext)) return 'audio';
+  return null;
+}
+
+function stripTransient(item){
+  const { _url, ...rest } = item;
+  return rest;
+}
+
+/* ---------------- Load / seed ---------------- */
+async function loadItems(){
+  try{
+    const all = await idbGetAll();
+    if(all.length === 0){
+      const seeded = localStorage.getItem('chemodanchik-seeded-v1');
+      if(!seeded){
+        await seedDemoData();
+        try{ localStorage.setItem('chemodanchik-seeded-v1','1'); }catch(e){}
+        return;
+      }
+    }
+    items = all.sort((a,b)=> b.createdAt - a.createdAt);
+    render();
+  }catch(e){
+    console.error('DB load error', e);
+    toast('Хранилище браузера недоступно: ' + e.message);
+    items = [];
+    render();
+  }
+}
+
+async function seedDemoData(){
+  const demoSpecs = [
+    { id:'demo1', title:'Держим лицо', tags:['Тяну время'], emoji:'😐', caption:'ОДНУ МИНУТУ...', bg:'#FFE8B0', favorite:false },
+    { id:'demo2', title:'Есть контакт', tags:['Согласие','Победа'], emoji:'🤝', caption:'ДОГОВОРИЛИСЬ', bg:'#C7F0EC', favorite:true },
+    { id:'demo3', title:'Ход конём', tags:['Финальный аргумент','Давление'], emoji:'♞', caption:'А ЕСЛИ ТАК?', bg:'#FBD0DD', favorite:false }
+  ];
+  const demo = demoSpecs.map((d,i)=>({
+    id:d.id, title:d.title, type:'image', tags:d.tags,
+    source:'file', blob: svgBlobSync(d.emoji, d.caption, d.bg),
+    favorite:d.favorite, createdAt: Date.now() - (demoSpecs.length - i)*1000
+  }));
+  try{
+    for(const it of demo){ await idbPut(it); }
+  }catch(e){ console.error(e); }
+  items = demo;
+  render();
+}
+
+function renderTabs(){
+  const all = ["Все", ...TAGS];
+  tabsEl.innerHTML = all.map(t =>
+    `<button class="tab ${t===activeFilter?'active':''}" data-tab="${t}">${t}</button>`
+  ).join('');
+  tabsEl.querySelectorAll('.tab').forEach(btn=>{
+    btn.onclick = ()=>{ activeFilter = btn.dataset.tab; renderTabs(); render(); };
+  });
+}
+
+function matchesFilter(item){
+  const inTag = activeFilter === "Все" || item.tags.includes(activeFilter);
+  const q = searchQuery.trim().toLowerCase();
+  const inSearch = !q || item.title.toLowerCase().includes(q) || item.tags.some(t=>t.toLowerCase().includes(q));
+  return inTag && inSearch;
+}
+
+function cardMediaHtml(item){
+  const url = mediaSrc(item);
+  if(item.type === 'image') return `<img src="${url}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;audio-tile&quot;>🔗💔</div>'">`;
+  if(item.type === 'video') return `<video src="${url}" muted preload="metadata"></video><div class="play-badge">▶</div>`;
+  if(item.type === 'audio') return `<div class="audio-tile">🎧</div>`;
+  return `<div class="audio-tile">📎</div>`;
+}
+
+function render(){
+  renderTabs();
+  const list = items.filter(matchesFilter);
+  if(list.length === 0){
+    grid.innerHTML = `
+      <div class="empty-state">
+        <div class="big">🗂️</div>
+        <h3>Пока пусто</h3>
+        <p>${items.length===0 ? 'Самое время закинуть первый козырь. Нажмите «+» внизу.' : 'Ничего не найдено под этим фильтром.'}</p>
+      </div>`;
+    return;
+  }
+  grid.innerHTML = list.map(item => `
+    <div class="card" data-id="${item.id}">
+      <div class="card-media">
+        ${item.favorite ? '<div class="fav-badge">⭐</div>' : ''}
+        ${item.source === 'link' ? '<div class="play-badge" style="left:auto;right:6px;top:6px;bottom:auto;">🔗</div>' : ''}
+        ${cardMediaHtml(item)}
+      </div>
+      <div class="card-body">
+        <p class="card-title">${escapeHtml(item.title || 'Без названия')}</p>
+        <div class="card-tags">
+          ${item.tags.slice(0,2).map(t=>`<span class="chip">${t}</span>`).join('')}
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('.card').forEach(card=>{
+    card.onclick = ()=> openViewer(card.dataset.id);
+  });
+}
+
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+/* ---------------- Viewer ---------------- */
+function openViewer(id){
+  const item = items.find(i=>i.id===id);
+  if(!item) return;
+  currentViewerId = id;
+  $('#viewerTitle').textContent = item.title || 'Без названия';
+  $('#viewerTags').innerHTML = item.tags.map(t=>`<span class="chip">${t}</span>`).join('');
+
+  const mediaEl = $('#viewerMedia');
+  mediaEl.className = 'viewer-media';
+  const url = mediaSrc(item);
+  if(item.type === 'image'){
+    mediaEl.innerHTML = `<img src="${url}" alt="">`;
+  } else if(item.type === 'video'){
+    mediaEl.innerHTML = `<video src="${url}" controls playsinline></video>`;
+  } else if(item.type === 'audio'){
+    mediaEl.classList.add('audio-mode');
+    mediaEl.innerHTML = `<div class="emoji">🎧</div><audio src="${url}" controls></audio>`;
+  } else {
+    mediaEl.innerHTML = `<div style="padding:30px;color:#9FB0B8;">Файл нельзя предпросмотреть</div>`;
+  }
+
+  $('#viewerFav').innerHTML = item.favorite ? '★ В избранном' : '☆ В избранное';
+  $('#viewerDownload').innerHTML = item.source === 'link' ? '🔗 Открыть ссылку' : '⬇ Скачать файл';
+  $('#viewerOverlay').classList.add('open');
+}
+
+function closeViewer(){
+  $('#viewerOverlay').classList.remove('open');
+  $('#viewerMedia').innerHTML = '';
+  currentViewerId = null;
+}
+
+$('#viewerClose').onclick = closeViewer;
+$('#viewerOverlay').addEventListener('click', (e)=>{ if(e.target.id==='viewerOverlay') closeViewer(); });
+
+$('#viewerFav').onclick = async ()=>{
+  const item = items.find(i=>i.id===currentViewerId);
+  if(!item) return;
+  item.favorite = !item.favorite;
+  try{
+    await idbPut(stripTransient(item));
+    $('#viewerFav').innerHTML = item.favorite ? '★ В избранном' : '☆ В избранное';
+    render();
+  }catch(e){ console.error(e); toast('Не удалось сохранить'); }
+};
+
+$('#viewerDelete').onclick = async ()=>{
+  const item = items.find(i=>i.id===currentViewerId);
+  if(!item) return;
+  if(!confirm('Удалить этот файл из коллекции?')) return;
+  try{
+    await idbDelete(item.id);
+    if(item._url) URL.revokeObjectURL(item._url);
+  }catch(e){ console.error(e); }
+  items = items.filter(i=>i.id !== item.id);
+  closeViewer();
+  render();
+  toast('Удалено');
+};
+
+$('#viewerDownload').onclick = ()=>{
+  const item = items.find(i=>i.id===currentViewerId);
+  if(!item) return;
+  if(item.source === 'link'){
+    window.open(item.url, '_blank');
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = mediaSrc(item);
+  a.download = (item.title || 'meme').replace(/[^a-zA-Zа-яА-Я0-9]/g,'_');
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};
+
+$('#viewerShare').onclick = async ()=>{
+  const item = items.find(i=>i.id===currentViewerId);
+  if(!item) return;
+
+  if(item.source === 'link'){
+    // Ссылку не скачиваем — просто передаём её дальше как ссылку
+    try{
+      if(navigator.share){
+        await navigator.share({ title: item.title || 'Мем', url: item.url });
+        return;
+      }
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(item.url);
+        toast('Ссылка скопирована в буфер обмена');
+        return;
+      }
+      toast('Скопируйте ссылку вручную: ' + item.url);
+    }catch(e){
+      if(e.name !== 'AbortError'){
+        console.error(e);
+        toast('Не удалось поделиться ссылкой');
+      }
+    }
+    return;
+  }
+
+  try{
+    const ext = (item.blob.type.split('/')[1] || 'dat').split('+')[0];
+    const file = new File([item.blob], `${(item.title||'meme').replace(/[^a-zA-Zа-яА-Я0-9]/g,'_')}.${ext}`, {type: item.blob.type});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title: item.title || 'Мем'});
+      return;
+    }
+    if(navigator.share){
+      await navigator.share({title: item.title || 'Мем', text: item.title || ''});
+      return;
+    }
+    toast('Браузер не поддерживает быструю отправку — скачайте файл');
+  }catch(e){
+    if(e.name !== 'AbortError'){
+      console.error(e);
+      toast('Отправка не удалась, попробуйте скачать файл');
+    }
+  }
+};
+
+/* ---------------- Add flow ---------------- */
+function renderTagPicker(){
+  $('#tagPicker').innerHTML = TAGS.map(t=>
+    `<div class="tag-opt ${selectedTags.includes(t)?'selected':''}" data-tag="${t}">${t}</div>`
+  ).join('');
+  $('#tagPicker').querySelectorAll('.tag-opt').forEach(el=>{
+    el.onclick = ()=>{
+      const t = el.dataset.tag;
+      if(selectedTags.includes(t)) selectedTags = selectedTags.filter(x=>x!==t);
+      else selectedTags.push(t);
+      renderTagPicker();
+    };
+  });
+}
+
+function setAddMode(mode){
+  addMode = mode;
+  $('#addModeFile').classList.toggle('active', mode==='file');
+  $('#addModeLink').classList.toggle('active', mode==='link');
+  $('#fileFieldWrap').style.display = mode==='file' ? 'block' : 'none';
+  $('#linkFieldWrap').style.display = mode==='link' ? 'block' : 'none';
+}
+$('#addModeFile').onclick = ()=> setAddMode('file');
+$('#addModeLink').onclick = ()=> setAddMode('link');
+
+function renderLinkTypePicker(){
+  $('#linkTypePicker').querySelectorAll('.tag-opt').forEach(el=>{
+    el.classList.toggle('selected', el.dataset.type === selectedLinkType);
+    el.onclick = ()=>{ selectedLinkType = el.dataset.type; renderLinkTypePicker(); };
+  });
+}
+renderLinkTypePicker();
+
+$('#linkInput').addEventListener('input', (e)=>{
+  if(!selectedLinkType){
+    const guess = guessTypeFromUrl(e.target.value.trim());
+    if(guess){ selectedLinkType = guess; renderLinkTypePicker(); }
+  }
+});
+
+function openAdd(){
+  pendingFile = null;
+  selectedTags = [];
+  selectedLinkType = null;
+  setAddMode('file');
+  $('#titleInput').value = '';
+  $('#fileInput').value = '';
+  $('#linkInput').value = '';
+  $('#fileDrop').classList.remove('has-file');
+  $('#fileDropText').textContent = 'Нажмите, чтобы выбрать файл';
+  $('#sizeWarn').style.display = 'none';
+  renderTagPicker();
+  renderLinkTypePicker();
+  $('#addOverlay').classList.add('open');
+}
+function closeAdd(){ $('#addOverlay').classList.remove('open'); }
+
+$('#fabAdd').onclick = openAdd;
+$('#addClose').onclick = closeAdd;
+$('#addOverlay').addEventListener('click', (e)=>{ if(e.target.id==='addOverlay') closeAdd(); });
+
+$('#fileInput').onchange = (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const warnEl = $('#sizeWarn');
+  if(file.size > 60 * 1024 * 1024){
+    warnEl.style.display = 'block';
+    warnEl.textContent = `Файл весит ${(file.size/1024/1024).toFixed(1)} МБ — очень большой, сохранение может зависнуть или не сработать на слабом телефоне.`;
+  } else {
+    warnEl.style.display = 'none';
+  }
+  pendingFile = file;
+  $('#fileDrop').classList.add('has-file');
+  $('#fileDropText').textContent = `Выбрано: ${file.name}`;
+};
+
+$('#saveBtn').onclick = async ()=>{
+  const title = $('#titleInput').value.trim() || 'Без названия';
+  const id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  let newItem;
+
+  if(addMode === 'link'){
+    const url = $('#linkInput').value.trim();
+    if(!url){ toast('Вставьте ссылку'); return; }
+    if(!/^https?:\/\//i.test(url)){ toast('Ссылка должна начинаться с http:// или https://'); return; }
+    if(!selectedLinkType){ toast('Выберите тип контента по ссылке'); return; }
+    newItem = {
+      id, title, type: selectedLinkType,
+      tags: selectedTags.length ? selectedTags : [],
+      source: 'link', url,
+      favorite: false, createdAt: Date.now()
+    };
+  } else {
+    if(!pendingFile){ toast('Сначала выберите файл'); return; }
+    newItem = {
+      id, title, type: typeOf(pendingFile.type),
+      tags: selectedTags.length ? selectedTags : [],
+      source: 'file', blob: pendingFile,
+      favorite: false, createdAt: Date.now()
+    };
+  }
+
+  const saveBtn = $('#saveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Сохраняю...';
+  try{
+    await idbPut(newItem);
+    items.unshift(newItem);
+    closeAdd();
+    render();
+    toast(addMode === 'link' ? 'Ссылка добавлена в чемоданчик' : 'Добавлено в чемоданчик');
+  }catch(e){
+    console.error(e);
+    toast('Не удалось сохранить: ' + e.message);
+  }finally{
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Добавить в коллекцию';
+  }
+};
+
+/* ---------------- Settings / Export / Import ---------------- */
+function formatBytes(bytes){
+  if(bytes < 1024) return bytes + ' Б';
+  if(bytes < 1024*1024) return (bytes/1024).toFixed(0) + ' КБ';
+  return (bytes/1024/1024).toFixed(1) + ' МБ';
+}
+
+function updateSizeEstimate(){
+  const favOnly = $('#favOnlyCheck').checked;
+  const list = favOnly ? items.filter(i=>i.favorite) : items;
+  const total = list.reduce((sum, i)=> sum + (i.source==='file' && i.blob ? i.blob.size : 0), 0);
+  const linkCount = list.filter(i=>i.source==='link').length;
+  $('#sizeEstimate').textContent = list.length
+    ? `${list.length} шт. (из них ${linkCount} по ссылке) · примерно ${formatBytes(total)} в архиве`
+    : 'Нет файлов для экспорта с этим фильтром';
+}
+
+$('#menuBtn').onclick = ()=>{ $('#settingsOverlay').classList.add('open'); updateSizeEstimate(); };
+$('#settingsClose').onclick = ()=> $('#settingsOverlay').classList.remove('open');
+$('#settingsOverlay').addEventListener('click', (e)=>{ if(e.target.id==='settingsOverlay') $('#settingsOverlay').classList.remove('open'); });
+$('#favOnlyCheck').onchange = updateSizeEstimate;
+
+function extFromMime(mime){
+  if(!mime) return 'bin';
+  const part = mime.split('/')[1] || 'bin';
+  return part.split('+')[0].split(';')[0];
+}
+
+$('#exportBtn').onclick = async ()=>{
+  const btn = $('#exportBtn');
+  const original = btn.textContent;
+  if(typeof JSZip === 'undefined'){
+    toast('Не удалось загрузить библиотеку архивации — проверьте интернет и попробуйте ещё раз');
+    return;
+  }
+  const favOnly = $('#favOnlyCheck').checked;
+  const list = favOnly ? items.filter(i=>i.favorite) : items;
+  if(list.length === 0){ toast('Нечего экспортировать'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Собираю архив...';
+  try{
+    const zip = new JSZip();
+    const manifest = [];
+    list.forEach(item=>{
+      if(item.source === 'link'){
+        manifest.push({
+          id: item.id, title: item.title, type: item.type,
+          tags: item.tags, favorite: item.favorite, createdAt: item.createdAt,
+          source: 'link', url: item.url
+        });
+        return;
+      }
+      const ext = extFromMime(item.blob.type);
+      const filename = `${item.id}.${ext}`;
+      zip.file(filename, item.blob);
+      manifest.push({
+        id: item.id, title: item.title, type: item.type,
+        tags: item.tags, favorite: item.favorite, createdAt: item.createdAt,
+        source: 'file', file: filename, mime: item.blob.type
+      });
+    });
+    zip.file('manifest.json', JSON.stringify({ app:'peregovorny-chemodanchik', version:2, items: manifest }));
+    const content = await zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{level:6} });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'chemodanchik-export-' + new Date().toISOString().slice(0,10) + '.zip';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast(`Архив готов: ${list.length} шт., ${formatBytes(content.size)}`);
+  }catch(e){
+    console.error(e);
+    toast('Не удалось собрать архив');
+  }finally{
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+};
+
+async function importFromZip(file){
+  const zip = await JSZip.loadAsync(file);
+  const manifestEntry = zip.file('manifest.json');
+  if(!manifestEntry) throw new Error('В архиве нет manifest.json — это не файл экспорта чемоданчика');
+  const manifestText = await manifestEntry.async('string');
+  const manifest = JSON.parse(manifestText);
+  const list = manifest.items || [];
+  const existingIds = new Set(items.map(i=>i.id));
+  let count = 0;
+  for(const entry of list){
+    try{
+      let id = entry.id;
+      if(!id || existingIds.has(id)) id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+      existingIds.add(id);
+
+      if(entry.source === 'link'){
+        await idbPut({
+          id, title: entry.title || 'Без названия',
+          type: entry.type || 'other',
+          tags: Array.isArray(entry.tags) ? entry.tags : [],
+          source: 'link', url: entry.url,
+          favorite: !!entry.favorite, createdAt: entry.createdAt || Date.now()
+        });
+        count++;
+        continue;
+      }
+
+      const fileEntry = zip.file(entry.file);
+      if(!fileEntry) continue;
+      const blob = await fileEntry.async('blob');
+      const typedBlob = entry.mime ? new Blob([blob], {type: entry.mime}) : blob;
+      await idbPut({
+        id, title: entry.title || 'Без названия',
+        type: entry.type || typeOf(typedBlob.type),
+        tags: Array.isArray(entry.tags) ? entry.tags : [],
+        source: 'file', blob: typedBlob, favorite: !!entry.favorite,
+        createdAt: entry.createdAt || Date.now()
+      });
+      count++;
+    }catch(err){ console.error('skip entry', err); }
+  }
+  return count;
+}
+
+async function importFromJson(file){
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  const list = Array.isArray(parsed) ? parsed : (parsed.items || []);
+  const existingIds = new Set(items.map(i=>i.id));
+  let count = 0;
+  for(const it of list){
+    try{
+      const resp = await fetch(it.dataUrl);
+      const blob = await resp.blob();
+      let id = it.id;
+      if(!id || existingIds.has(id)) id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+      existingIds.add(id);
+      await idbPut({
+        id, title: it.title || 'Без названия',
+        type: it.type || typeOf(blob.type),
+        tags: Array.isArray(it.tags) ? it.tags : [],
+        source: 'file', blob, favorite: !!it.favorite,
+        createdAt: it.createdAt || Date.now()
+      });
+      count++;
+    }catch(err){ console.error('skip item', err); }
+  }
+  return count;
+}
+
+$('#importInput').onchange = async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  try{
+    const isZip = file.name.toLowerCase().endsWith('.zip') || file.type.includes('zip');
+    const count = isZip ? await importFromZip(file) : await importFromJson(file);
+    await loadItems();
+    $('#settingsOverlay').classList.remove('open');
+    toast(`Импортировано: ${count}`);
+  }catch(err){
+    console.error(err);
+    toast('Не удалось прочитать файл: ' + err.message);
+  }finally{
+    e.target.value = '';
+  }
+};
+
+$('#importUrlBtn').onclick = async ()=>{
+  const url = $('#importUrlInput').value.trim();
+  if(!url){ toast('Вставьте ссылку на файл экспорта'); return; }
+  const btn = $('#importUrlBtn');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Загружаю...';
+  try{
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('Сервер ответил ' + resp.status);
+    const blob = await resp.blob();
+    const looksZip = url.toLowerCase().includes('.zip') || blob.type.includes('zip');
+    const count = looksZip ? await importFromZip(blob) : await importFromJson(blob);
+    await loadItems();
+    $('#settingsOverlay').classList.remove('open');
+    toast(`Импортировано: ${count}`);
+  }catch(e){
+    console.error(e);
+    if(e.message && e.message.includes('Failed to fetch')){
+      toast('Не удалось скачать — вероятно, ссылка блокирует CORS-запросы');
+    } else {
+      toast('Не удалось импортировать: ' + e.message);
+    }
+  }finally{
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+};
+
+/* ---------------- Search ---------------- */
+$('#searchInput').addEventListener('input', (e)=>{
+  searchQuery = e.target.value;
+  render();
+});
+
+loadItems();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch((e)=> console.warn('SW registration failed', e));
+  });
+}
+</script>
+</body>
+</html>
