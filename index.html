@@ -345,6 +345,20 @@
   </div>
 </div>
 
+<div class="overlay" id="editLinkOverlay">
+  <div class="sheet">
+    <button class="sheet-close" id="editLinkClose">✕</button>
+    <div class="sheet-handle"></div>
+    <h2 class="viewer-title">Изменить ссылку</h2>
+    <div class="field">
+      <label>Новый адрес файла</label>
+      <input type="text" id="editLinkInput" placeholder="https://...">
+      <div class="hint">Например, поменяйте raw.githubusercontent.com на cdn.jsdelivr.net/gh/..., чтобы отправка слала настоящий файл.</div>
+    </div>
+    <button class="btn btn-primary full-row" id="editLinkSave" style="width:100%;">Сохранить</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -686,18 +700,30 @@ $('#viewerDelete').onclick = async ()=>{
   toast('Удалено');
 };
 
-$('#viewerEditLink').onclick = async ()=>{
+let editingLinkId = null;
+
+$('#viewerEditLink').onclick = ()=>{
   const item = items.find(i=>i.id===currentViewerId);
   if(!item || item.source !== 'link') return;
-  const newUrl = prompt('Новая ссылка на файл:', item.url);
-  if(newUrl === null) return; // отмена
-  const trimmed = newUrl.trim();
+  editingLinkId = item.id;
+  $('#editLinkInput').value = item.url;
+  $('#editLinkOverlay').classList.add('open');
+};
+
+$('#editLinkClose').onclick = ()=> $('#editLinkOverlay').classList.remove('open');
+$('#editLinkOverlay').addEventListener('click', (e)=>{ if(e.target.id==='editLinkOverlay') $('#editLinkOverlay').classList.remove('open'); });
+
+$('#editLinkSave').onclick = async ()=>{
+  const item = items.find(i=>i.id===editingLinkId);
+  if(!item) return;
+  const trimmed = $('#editLinkInput').value.trim();
   if(!trimmed){ toast('Ссылка не может быть пустой'); return; }
   if(!/^https?:\/\//i.test(trimmed)){ toast('Ссылка должна начинаться с http:// или https://'); return; }
   item.url = trimmed;
   try{
     await idbPut(stripTransient(item));
-    openViewer(item.id); // перерисовать превью с новым адресом
+    $('#editLinkOverlay').classList.remove('open');
+    openViewer(item.id);
     render();
     toast('Ссылка обновлена');
   }catch(e){
@@ -721,6 +747,25 @@ $('#viewerDownload').onclick = ()=>{
   a.remove();
 };
 
+// Автоматически превращает "неудобные" для fetch() ссылки GitHub (raw.githubusercontent.com,
+// github.com/.../raw/...) в CORS-дружелюбный адрес через jsDelivr. Ссылки с других доменов
+// возвращает как есть. Ничего не сохраняет — просто подменяет адрес в момент скачивания.
+function toCorsFriendlyUrl(url){
+  try{
+    let m = url.match(/^https?:\/\/raw\.githubusercontent\.com\/([^\/]+)\/([^\/]+)\/([^\/]+)\/(.+)$/i);
+    if(m){
+      const [, user, repo, branch, path] = m;
+      return `https://cdn.jsdelivr.net/gh/${user}/${repo}@${branch}/${path}`;
+    }
+    m = url.match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/raw\/(?:refs\/heads\/)?([^\/]+)\/(.+)$/i);
+    if(m){
+      const [, user, repo, branch, path] = m;
+      return `https://cdn.jsdelivr.net/gh/${user}/${repo}@${branch}/${path}`;
+    }
+  }catch(e){ /* falls through */ }
+  return url;
+}
+
 async function shareAsFile(blob, item){
   const ext = (blob.type.split('/')[1] || 'dat').split('+')[0];
   const filename = `${(item.title||'meme').replace(/[^a-zA-Zа-яА-Я0-9]/g,'_')}.${ext}`;
@@ -743,7 +788,7 @@ $('#viewerShare').onclick = async ()=>{
     btn.disabled = true;
     btn.textContent = 'Загружаю файл...';
     try{
-      const resp = await fetch(item.url);
+      const resp = await fetch(toCorsFriendlyUrl(item.url));
       if(!resp.ok) throw new Error('bad status');
       const blob = await resp.blob();
       const sent = await shareAsFile(blob, item);
@@ -1134,7 +1179,7 @@ $('#importInput').onchange = async (e)=>{
 // Общая логика: скачать .zip/.json по ссылке и импортировать. Используется и полем
 // "импорт по ссылке" в настройках, и кнопкой "загрузить базовую коллекцию".
 async function loadCollectionFromUrl(url){
-  const resp = await fetch(url);
+  const resp = await fetch(toCorsFriendlyUrl(url));
   if(!resp.ok) throw new Error('Сервер ответил ' + resp.status);
   const blob = await resp.blob();
   const looksZip = url.toLowerCase().includes('.zip') || blob.type.includes('zip');
