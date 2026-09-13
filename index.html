@@ -248,6 +248,9 @@
       <button class="btn btn-ghost" id="viewerDownload">⬇ Скачать файл</button>
       <button class="btn btn-danger" id="viewerDelete">🗑 Удалить</button>
     </div>
+    <div class="action-row" id="viewerEditLinkRow" style="display:none;">
+      <button class="btn btn-secondary full-row" id="viewerEditLink">✏️ Изменить ссылку</button>
+    </div>
   </div>
 </div>
 
@@ -645,6 +648,7 @@ function openViewer(id){
 
   $('#viewerFav').innerHTML = item.favorite ? '★ В избранном' : '☆ В избранное';
   $('#viewerDownload').innerHTML = item.source === 'link' ? '🔗 Открыть ссылку' : '⬇ Скачать файл';
+  $('#viewerEditLinkRow').style.display = item.source === 'link' ? 'grid' : 'none';
   $('#viewerOverlay').classList.add('open');
 }
 
@@ -680,6 +684,26 @@ $('#viewerDelete').onclick = async ()=>{
   closeViewer();
   render();
   toast('Удалено');
+};
+
+$('#viewerEditLink').onclick = async ()=>{
+  const item = items.find(i=>i.id===currentViewerId);
+  if(!item || item.source !== 'link') return;
+  const newUrl = prompt('Новая ссылка на файл:', item.url);
+  if(newUrl === null) return; // отмена
+  const trimmed = newUrl.trim();
+  if(!trimmed){ toast('Ссылка не может быть пустой'); return; }
+  if(!/^https?:\/\//i.test(trimmed)){ toast('Ссылка должна начинаться с http:// или https://'); return; }
+  item.url = trimmed;
+  try{
+    await idbPut(stripTransient(item));
+    openViewer(item.id); // перерисовать превью с новым адресом
+    render();
+    toast('Ссылка обновлена');
+  }catch(e){
+    console.error(e);
+    toast('Не удалось сохранить новую ссылку');
+  }
 };
 
 $('#viewerDownload').onclick = ()=>{
