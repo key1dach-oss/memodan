@@ -309,6 +309,10 @@
     <button class="sheet-close" id="settingsClose">✕</button>
     <div class="sheet-handle"></div>
     <h2 class="viewer-title">Перенос на другой телефон</h2>
+    <div id="baseCollectionBlock" style="display:none; margin-bottom:18px; padding:12px; border:2px dashed var(--mint); border-radius:var(--radius);">
+      <p style="font-size:13px; color:var(--paper); margin:0 0 10px;">Есть общая базовая коллекция — можно подтянуть новое оттуда в любой момент (без дублей).</p>
+      <button class="btn btn-secondary full-row" id="loadBaseBtnSettings" style="width:100%;">📥 Обновить из базовой коллекции</button>
+    </div>
     <p style="font-size:13px; color:#9FB0B8; line-height:1.5; margin:0 0 12px;">
       Коллекция хранится прямо в этом браузере на этом телефоне и никуда сама не летит.
       Чтобы перенести её — выгрузите архив ниже и перешлите его себе (в мессенджер, почту
@@ -341,7 +345,12 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const TAGS = ["Согласие","Возражение","Тяну время","Давление","Капитуляция","Победа","Разрядка обстановки","Финальный аргумент"];
+const TAGS = ["Приветствие","Согласие","Возражение","Тяну время","Давление","Капитуляция","Победа","Разрядка обстановки","Недоумение","Финальный аргумент","Прощание"];
+
+// Ссылка на базовую (общую) коллекцию — заполните после того, как сделаете экспорт
+// и зальёте .zip/.json на GitHub (или другой хостинг с CORS). Пока строка пустая,
+// кнопка загрузки базовой коллекции в приложении не показывается.
+const DEFAULT_BASE_URL = '';
 const DB_NAME = 'chemodanchik-db';
 const STORE = 'items';
 
@@ -449,8 +458,58 @@ function guessTypeFromUrl(url){
 }
 
 function stripTransient(item){
-  const { _url, ...rest } = item;
+  const { _url, _hash, ...rest } = item;
   return rest;
+}
+
+/* ---------------- Duplicate detection ---------------- */
+async function blobHash(blob){
+  const buf = await blob.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function getHash(item){
+  if(item.source === 'link' || !item.blob) return null;
+  if(!item._hash){
+    try{ item._hash = await blobHash(item.blob); }catch(e){ return null; }
+  }
+  return item._hash;
+}
+
+function normalizeUrl(url){
+  return (url || '').trim().replace(/\/+$/,'');
+}
+
+// Ищет дубликат среди уже загруженных items (для ручного добавления одного элемента)
+async function findDuplicate(candidate){
+  if(candidate.source === 'link'){
+    const norm = normalizeUrl(candidate.url);
+    return items.find(i => i.source === 'link' && normalizeUrl(i.url) === norm) || null;
+  }
+  let hash;
+  try{ hash = await blobHash(candidate.blob); }catch(e){ return null; }
+  for(const it of items){
+    if(it.source !== 'link'){
+      const h = await getHash(it);
+      if(h && h === hash) return it;
+    }
+  }
+  return null;
+}
+
+// Собирает "подписи" всей текущей коллекции один раз — используется при пакетном импорте,
+// чтобы не пересчитывать хеши для каждой сравниваемой пары.
+async function collectSignatures(){
+  const linkSet = new Set(items.filter(i=>i.source==='link').map(i=>normalizeUrl(i.url)));
+  const hashSet = new Set();
+  for(const it of items){
+    if(it.source !== 'link'){
+      const h = await getHash(it);
+      if(h) hashSet.add(h);
+    }
+  }
+  return { linkSet, hashSet };
 }
 
 /* ---------------- Load / seed ---------------- */
@@ -522,12 +581,17 @@ function render(){
   renderTabs();
   const list = items.filter(matchesFilter);
   if(list.length === 0){
+    const showBaseBtn = items.length === 0 && DEFAULT_BASE_URL;
     grid.innerHTML = `
       <div class="empty-state">
         <div class="big">🗂️</div>
         <h3>Пока пусто</h3>
         <p>${items.length===0 ? 'Самое время закинуть первый козырь. Нажмите «+» внизу.' : 'Ничего не найдено под этим фильтром.'}</p>
+        ${showBaseBtn ? '<button class="btn btn-primary" id="loadBaseBtn" style="margin-top:16px;">📥 Загрузить базовую коллекцию</button>' : ''}
       </div>`;
+    if(showBaseBtn){
+      $('#loadBaseBtn').onclick = ()=> loadBaseCollection($('#loadBaseBtn'));
+    }
     return;
   }
   grid.innerHTML = list.map(item => `
@@ -633,39 +697,70 @@ $('#viewerDownload').onclick = ()=>{
   a.remove();
 };
 
+async function shareAsFile(blob, item){
+  const ext = (blob.type.split('/')[1] || 'dat').split('+')[0];
+  const filename = `${(item.title||'meme').replace(/[^a-zA-Zа-яА-Я0-9]/g,'_')}.${ext}`;
+  const file = new File([blob], filename, {type: blob.type});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    await navigator.share({files:[file], title: item.title || 'Мем'});
+    return true;
+  }
+  return false;
+}
+
 $('#viewerShare').onclick = async ()=>{
   const item = items.find(i=>i.id===currentViewerId);
   if(!item) return;
+  const btn = $('#viewerShare');
+  const original = btn.innerHTML;
 
   if(item.source === 'link'){
-    // Ссылку не скачиваем — просто передаём её дальше как ссылку
+    // Сначала пытаемся скачать сам файл, чтобы отправить как вложение, а не голую ссылку
+    btn.disabled = true;
+    btn.textContent = 'Загружаю файл...';
     try{
+      const resp = await fetch(item.url);
+      if(!resp.ok) throw new Error('bad status');
+      const blob = await resp.blob();
+      const sent = await shareAsFile(blob, item);
+      if(sent) return;
+      // canShare с файлами не поддерживается — отправим саму ссылку через share, если он есть
       if(navigator.share){
         await navigator.share({ title: item.title || 'Мем', url: item.url });
         return;
       }
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        await navigator.clipboard.writeText(item.url);
-        toast('Ссылка скопирована в буфер обмена');
-        return;
-      }
-      toast('Скопируйте ссылку вручную: ' + item.url);
+      throw new Error('no share api');
     }catch(e){
-      if(e.name !== 'AbortError'){
-        console.error(e);
-        toast('Не удалось поделиться ссылкой');
+      if(e.name === 'AbortError') return; // пользователь сам отменил системное окно
+      // Не удалось скачать (скорее всего CORS) или отправить файлом — откатываемся на ссылку
+      try{
+        if(navigator.share){
+          await navigator.share({ title: item.title || 'Мем', url: item.url });
+          toast('Не удалось скачать файл напрямую — отправлена ссылка');
+          return;
+        }
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(item.url);
+          toast('Файл скачать не вышло — ссылка скопирована в буфер обмена');
+          return;
+        }
+        toast('Скопируйте ссылку вручную: ' + item.url);
+      }catch(e2){
+        if(e2.name !== 'AbortError'){
+          console.error(e2);
+          toast('Не удалось поделиться');
+        }
       }
+    }finally{
+      btn.disabled = false;
+      btn.innerHTML = original;
     }
     return;
   }
 
   try{
-    const ext = (item.blob.type.split('/')[1] || 'dat').split('+')[0];
-    const file = new File([item.blob], `${(item.title||'meme').replace(/[^a-zA-Zа-яА-Я0-9]/g,'_')}.${ext}`, {type: item.blob.type});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file], title: item.title || 'Мем'});
-      return;
-    }
+    const sent = await shareAsFile(item.blob, item);
+    if(sent) return;
     if(navigator.share){
       await navigator.share({title: item.title || 'Мем', text: item.title || ''});
       return;
@@ -783,6 +878,28 @@ $('#saveBtn').onclick = async ()=>{
 
   const saveBtn = $('#saveBtn');
   saveBtn.disabled = true;
+  saveBtn.textContent = 'Проверяю на повторы...';
+  try{
+    const dupCandidate = newItem.source === 'link'
+      ? { source:'link', url: newItem.url }
+      : { source:'file', blob: newItem.blob };
+    const dup = await findDuplicate(dupCandidate);
+    if(dup){
+      const proceed = confirm(
+        newItem.source === 'link'
+          ? `Такая ссылка уже есть в коллекции: «${dup.title}». Добавить ещё раз?`
+          : `Похоже, такой файл уже есть в коллекции: «${dup.title}». Добавить ещё раз?`
+      );
+      if(!proceed){
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Добавить в коллекцию';
+        return;
+      }
+    }
+  }catch(e){
+    console.warn('Duplicate check failed, proceeding anyway', e);
+  }
+
   saveBtn.textContent = 'Сохраняю...';
   try{
     await idbPut(newItem);
@@ -816,7 +933,12 @@ function updateSizeEstimate(){
     : 'Нет файлов для экспорта с этим фильтром';
 }
 
-$('#menuBtn').onclick = ()=>{ $('#settingsOverlay').classList.add('open'); updateSizeEstimate(); };
+$('#menuBtn').onclick = ()=>{
+  $('#settingsOverlay').classList.add('open');
+  updateSizeEstimate();
+  $('#baseCollectionBlock').style.display = DEFAULT_BASE_URL ? 'block' : 'none';
+};
+$('#loadBaseBtnSettings').onclick = ()=> loadBaseCollection($('#loadBaseBtnSettings'));
 $('#settingsClose').onclick = ()=> $('#settingsOverlay').classList.remove('open');
 $('#settingsOverlay').addEventListener('click', (e)=>{ if(e.target.id==='settingsOverlay') $('#settingsOverlay').classList.remove('open'); });
 $('#favOnlyCheck').onchange = updateSizeEstimate;
@@ -889,14 +1011,18 @@ async function importFromZip(file){
   const manifest = JSON.parse(manifestText);
   const list = manifest.items || [];
   const existingIds = new Set(items.map(i=>i.id));
+  const { linkSet, hashSet } = await collectSignatures();
   let count = 0;
+  let skipped = 0;
   for(const entry of list){
     try{
-      let id = entry.id;
-      if(!id || existingIds.has(id)) id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
-      existingIds.add(id);
-
       if(entry.source === 'link'){
+        const norm = normalizeUrl(entry.url);
+        if(linkSet.has(norm)){ skipped++; continue; }
+        let id = entry.id;
+        if(!id || existingIds.has(id)) id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+        existingIds.add(id);
+        linkSet.add(norm);
         await idbPut({
           id, title: entry.title || 'Без названия',
           type: entry.type || 'other',
@@ -912,6 +1038,13 @@ async function importFromZip(file){
       if(!fileEntry) continue;
       const blob = await fileEntry.async('blob');
       const typedBlob = entry.mime ? new Blob([blob], {type: entry.mime}) : blob;
+      const hash = await blobHash(typedBlob);
+      if(hashSet.has(hash)){ skipped++; continue; }
+      hashSet.add(hash);
+
+      let id = entry.id;
+      if(!id || existingIds.has(id)) id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+      existingIds.add(id);
       await idbPut({
         id, title: entry.title || 'Без названия',
         type: entry.type || typeOf(typedBlob.type),
@@ -922,7 +1055,7 @@ async function importFromZip(file){
       count++;
     }catch(err){ console.error('skip entry', err); }
   }
-  return count;
+  return { count, skipped };
 }
 
 async function importFromJson(file){
@@ -930,11 +1063,17 @@ async function importFromJson(file){
   const parsed = JSON.parse(text);
   const list = Array.isArray(parsed) ? parsed : (parsed.items || []);
   const existingIds = new Set(items.map(i=>i.id));
+  const { hashSet } = await collectSignatures();
   let count = 0;
+  let skipped = 0;
   for(const it of list){
     try{
       const resp = await fetch(it.dataUrl);
       const blob = await resp.blob();
+      const hash = await blobHash(blob);
+      if(hashSet.has(hash)){ skipped++; continue; }
+      hashSet.add(hash);
+
       let id = it.id;
       if(!id || existingIds.has(id)) id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
       existingIds.add(id);
@@ -948,7 +1087,7 @@ async function importFromJson(file){
       count++;
     }catch(err){ console.error('skip item', err); }
   }
-  return count;
+  return { count, skipped };
 }
 
 $('#importInput').onchange = async (e)=>{
@@ -956,10 +1095,10 @@ $('#importInput').onchange = async (e)=>{
   if(!file) return;
   try{
     const isZip = file.name.toLowerCase().endsWith('.zip') || file.type.includes('zip');
-    const count = isZip ? await importFromZip(file) : await importFromJson(file);
+    const { count, skipped } = isZip ? await importFromZip(file) : await importFromJson(file);
     await loadItems();
     $('#settingsOverlay').classList.remove('open');
-    toast(`Импортировано: ${count}`);
+    toast(`Импортировано: ${count}` + (skipped ? `, пропущено дубликатов: ${skipped}` : ''));
   }catch(err){
     console.error(err);
     toast('Не удалось прочитать файл: ' + err.message);
@@ -967,6 +1106,38 @@ $('#importInput').onchange = async (e)=>{
     e.target.value = '';
   }
 };
+
+// Общая логика: скачать .zip/.json по ссылке и импортировать. Используется и полем
+// "импорт по ссылке" в настройках, и кнопкой "загрузить базовую коллекцию".
+async function loadCollectionFromUrl(url){
+  const resp = await fetch(url);
+  if(!resp.ok) throw new Error('Сервер ответил ' + resp.status);
+  const blob = await resp.blob();
+  const looksZip = url.toLowerCase().includes('.zip') || blob.type.includes('zip');
+  const { count, skipped } = looksZip ? await importFromZip(blob) : await importFromJson(blob);
+  await loadItems();
+  return { count, skipped };
+}
+
+async function loadBaseCollection(btn){
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Загружаю базовую коллекцию...';
+  try{
+    const { count, skipped } = await loadCollectionFromUrl(DEFAULT_BASE_URL);
+    toast(`Базовая коллекция загружена: ${count}` + (skipped ? `, пропущено дубликатов: ${skipped}` : ''));
+  }catch(e){
+    console.error(e);
+    if(e.message && e.message.includes('Failed to fetch')){
+      toast('Не удалось скачать базовую коллекцию — проверьте интернет или ссылку');
+    } else {
+      toast('Не удалось загрузить базовую коллекцию: ' + e.message);
+    }
+  }finally{
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
 
 $('#importUrlBtn').onclick = async ()=>{
   const url = $('#importUrlInput').value.trim();
@@ -976,14 +1147,9 @@ $('#importUrlBtn').onclick = async ()=>{
   btn.disabled = true;
   btn.textContent = 'Загружаю...';
   try{
-    const resp = await fetch(url);
-    if(!resp.ok) throw new Error('Сервер ответил ' + resp.status);
-    const blob = await resp.blob();
-    const looksZip = url.toLowerCase().includes('.zip') || blob.type.includes('zip');
-    const count = looksZip ? await importFromZip(blob) : await importFromJson(blob);
-    await loadItems();
+    const { count, skipped } = await loadCollectionFromUrl(url);
     $('#settingsOverlay').classList.remove('open');
-    toast(`Импортировано: ${count}`);
+    toast(`Импортировано: ${count}` + (skipped ? `, пропущено дубликатов: ${skipped}` : ''));
   }catch(e){
     console.error(e);
     if(e.message && e.message.includes('Failed to fetch')){
