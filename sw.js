@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chemodanchik-shell-v1';
+const CACHE_NAME = 'chemodanchik-shell-v2';
 const SHELL_FILES = [
   './index.html',
   './manifest.json',
@@ -23,21 +23,21 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Cache-first for the app shell itself; everything else (remote links, fonts, CDN scripts)
-// just passes through to the network as usual.
+// Network-first for the app shell: всегда пытаемся взять свежую версию с сервера,
+// и только если сети нет (офлайн) — отдаём последнюю сохранённую копию из кэша.
+// Так обновления index.html на GitHub видны сразу же, а офлайн-режим не теряется.
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   const isShellRequest = url.origin === self.location.origin;
   if (!isShellRequest || event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(()=>{});
         return response;
-      }).catch(() => cached);
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
